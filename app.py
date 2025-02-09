@@ -34,30 +34,51 @@ llm = ChatGoogleGenerativeAI(
     google_api_key=os.getenv("GOOGLE_API_KEY")
 )
 
-def current_space_news():
+def space_events_agent():
     """
-    Retrieves and formats the latest space-related news using Tavily search.
+    Fetches and formats upcoming space events from NASA's EONET API.
     
     Returns:
-        dict: A structured response with key headlines and links.
+        dict: A dictionary with a concise and well-formatted summary of recent space-related events.
     """
+    import os
+    import requests
+    from datetime import datetime
+
+    base_url = "https://eonet.gsfc.nasa.gov/api/v2.1/events"
+    params = {"api_key": os.getenv("NASA_API_KEY")}
+
     try:
-        # Use Tavily API to fetch real-time space news
-        news_results = search.invoke({"query": "Latest space news, including recent discoveries, missions, and launches."})
-        
-        if not news_results:
-            return {"output": "🚀 **Space News Update:** No recent news found at the moment. Check NASA, ESA, or SpaceX websites for updates."}
+        response = requests.get(base_url, params=params, timeout=5)  # Set a timeout to avoid long waits
+        response.raise_for_status()
+    except requests.exceptions.RequestException as e:
+        return {"output": f"🚀 **Space Events Agent:** Unable to fetch data. Error: {str(e)}"}
 
-        # Format the top 3 space news articles
-        formatted_news = "\n\n".join(
-            [f"📰 **{article.get('title', 'Untitled')}**\n🔗 [Read More]({article.get('url', '#'}) )" for article in news_results[:3]]
-        )
+    events = response.json().get("events", [])
 
-        return {"output": f"🚀 **Latest Space News:**\n\n{formatted_news}"}
+    # Filter events related to space (exclude wildfires, icebergs, general disasters)
+    space_related = [
+        event for event in events
+        if any(cat.get("title", "").lower() in ["meteor", "asteroid", "space debris", "solar activity", "geomagnetic storm"]
+               for cat in event.get("categories", []))
+    ]
 
-    except Exception as e:
-        return {"output": f"🚀 **Space News Update:** Unable to fetch news. Error: {str(e)}"}
+    if not space_related:
+        return {"output": "🚀 **Space Events Agent:** No major space-related events at the moment."}
 
+    # Sort events by date (latest first)
+    space_related = sorted(space_related, key=lambda e: e.get("geometries", [{}])[0].get("date", ""), reverse=True)
+
+    # Limit to top 5 latest events
+    formatted_events = "\n".join([
+        f"🔭 **{event.get('title', 'Unknown Event')}**\n"
+        f"📅 Date: {event.get('geometries', [{}])[0].get('date', 'N/A')}\n"
+        f"📍 Location: {event.get('geometries', [{}])[0].get('coordinates', 'Unknown')}\n"
+        f"🔎 Category: {event.get('categories', [{}])[0].get('title', 'Unknown')}\n"
+        for event in space_related[:5]
+    ])
+
+    return {"output": f"🚀 **Latest Space Events:**\n\n{formatted_events}"}
 
 def astronomy_image_agent(user_input: str):
     """
