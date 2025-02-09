@@ -34,51 +34,63 @@ llm = ChatGoogleGenerativeAI(
     google_api_key=os.getenv("GOOGLE_API_KEY")
 )
 
+# Initialize models and APIs
+llm = ChatGoogleGenerativeAI(
+    model="gemini-1.5-flash",
+    google_api_key=os.getenv("GOOGLE_API_KEY")
+)
+
 def space_events_agent():
     """
     Fetches and formats upcoming space events from NASA's EONET API.
-    
     Returns:
-        dict: A dictionary with a concise and well-formatted summary of recent space-related events.
+        dict: A dictionary with the formatted space events or a message if no events are found.
+    Raises:
+        HTTPError: If the request to the NASA API fails.
+    Note:
+        Requires NASA API key set in the environment variable NASA_API_KEY.
     """
     import os
     import requests
-    from datetime import datetime
 
     base_url = "https://eonet.gsfc.nasa.gov/api/v2.1/events"
     params = {"api_key": os.getenv("NASA_API_KEY")}
-
+    
     try:
-        response = requests.get(base_url, params=params, timeout=5)  # Set a timeout to avoid long waits
+        response = requests.get(base_url, params=params)
         response.raise_for_status()
-    except requests.exceptions.RequestException as e:
-        return {"output": f"🚀 **Space Events Agent:** Unable to fetch data. Error: {str(e)}"}
-
+    except Exception as e:
+        return {"output": f"🚀 **Space Events Agent:** Error fetching events: {str(e)}"}
+    
     events = response.json().get("events", [])
+    if events:
+        event_details = []
+        for event in events:
+            title = event.get('title', 'N/A')
+            # Retrieve category using safe defaults
+            category = (event.get('categories', [{}])[0]).get('title', 'Unknown Category')
+            geometries = event.get('geometries', [])
+            if geometries:
+                first_geometry = geometries[0]
+                coordinates = first_geometry.get('coordinates', 'Unknown Location')
+                event_date = first_geometry.get('date', 'Unknown Date')
+            else:
+                coordinates = 'Unknown Location'
+                event_date = 'Unknown Date'
+            
+            detail = (
+                f"**Event:** {title}\n"
+                f"**Category:** {category}\n"
+                f"**Location:** {coordinates}\n"
+                f"**Date:** {event_date}\n"
+            )
+            event_details.append(detail)
+        
+        formatted_events = "\n".join(event_details)
+        return {"output": f"🚀 **Space Events Agent:**\n\n{formatted_events}"}
+    else:
+        return {"output": "🚀 **Space Events Agent:** No events found at the moment."}
 
-    # Filter events related to space (exclude wildfires, icebergs, general disasters)
-    space_related = [
-        event for event in events
-        if any(cat.get("title", "").lower() in ["meteor", "asteroid", "space debris", "solar activity", "geomagnetic storm"]
-               for cat in event.get("categories", []))
-    ]
-
-    if not space_related:
-        return {"output": "🚀 **Space Events Agent:** No major space-related events at the moment."}
-
-    # Sort events by date (latest first)
-    space_related = sorted(space_related, key=lambda e: e.get("geometries", [{}])[0].get("date", ""), reverse=True)
-
-    # Limit to top 5 latest events
-    formatted_events = "\n".join([
-        f"🔭 **{event.get('title', 'Unknown Event')}**\n"
-        f"📅 Date: {event.get('geometries', [{}])[0].get('date', 'N/A')}\n"
-        f"📍 Location: {event.get('geometries', [{}])[0].get('coordinates', 'Unknown')}\n"
-        f"🔎 Category: {event.get('categories', [{}])[0].get('title', 'Unknown')}\n"
-        for event in space_related[:5]
-    ])
-
-    return {"output": f"🚀 **Latest Space Events:**\n\n{formatted_events}"}
 
 def astronomy_image_agent(user_input: str):
     """
